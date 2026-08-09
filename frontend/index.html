@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Inbox → Task Router</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #2a2f3a; --text: #e6e8ec;
+    --muted: #8b90a0; --accent: #6c8cff; --good: #38c172; --warn: #f5a623; --bad: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { padding: 20px 28px; border-bottom: 1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  header h1 { font-size: 18px; margin:0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .config { display:flex; gap:8px; align-items:center; }
+  .config input { background: var(--panel); border:1px solid var(--border); color:var(--text);
+                  padding:6px 10px; border-radius:6px; font-size:12px; width: 260px; }
+  main { display:grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 28px; max-width:1500px; margin:0 auto; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .panel h2 { font-size: 14px; margin: 0 0 10px 0; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  textarea { width:100%; min-height: 160px; background:#0d0f14; color:var(--text); border:1px solid var(--border);
+             border-radius:8px; padding:10px; font-family: ui-monospace, monospace; font-size:12px; resize: vertical; }
+  .row { display:flex; gap:8px; margin-top:10px; flex-wrap: wrap; }
+  button { background: var(--accent); color:white; border:none; padding:8px 14px; border-radius:6px;
+           font-size:13px; cursor:pointer; font-weight:500; }
+  button.secondary { background: transparent; border:1px solid var(--border); color: var(--text); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  table { width:100%; border-collapse: collapse; font-size:12px; margin-top:10px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:500; }
+  tr:hover { background:#1d212b; }
+  .stats { display:flex; gap:16px; flex-wrap:wrap; margin-top: 10px;}
+  .stat { background:#0d0f14; border:1px solid var(--border); border-radius:8px; padding:8px 14px; min-width:90px;}
+  .stat .n { font-size:20px; font-weight:600; }
+  .stat .l { font-size:11px; color:var(--muted); }
+  #chatLog { max-height: 380px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; margin-bottom:10px;}
+  .msg { padding:10px 12px; border-radius:8px; font-size:13px; line-height:1.4; max-width: 92%; }
+  .msg.user { background: var(--accent); align-self:flex-end; }
+  .msg.bot { background:#0d0f14; border:1px solid var(--border); align-self:flex-start; white-space:pre-wrap; }
+  .msg .data { display:block; margin-top:6px; font-size:11px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .chatinput { display:flex; gap:8px; }
+  .chatinput input { flex:1; background:#0d0f14; border:1px solid var(--border); color:var(--text);
+                      padding:10px; border-radius:8px; font-size:13px; }
+  .full { grid-column: 1 / -1; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; }
+  .status { font-size:12px; color: var(--muted); margin-top:8px; }
+  .body-preview { color: var(--muted); max-width: 260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Sales Inbox → Task Router</h1>
+    <div class="sub">Paste emails, watch it route, ask it questions.</div>
+  </div>
+  <div class="config">
+    <input id="backendUrl" placeholder="Backend URL, e.g. https://your-app.onrender.com" />
+    <input id="candidateId" placeholder="candidate_id (your email)" />
+  </div>
+</header>
+
+<main>
+  <div class="panel full">
+    <h2>1. Paste a batch of emails (JSON, same schema as inbox.json)</h2>
+    <textarea id="jsonInput" placeholder='[{"email_id":"em_001","thread_id":"th_1","subject":"...","body":"...","from_email":"...","received_at":"2026-08-01T09:00:00+05:30"}]'></textarea>
+    <div class="row">
+      <button id="genBtn" class="secondary">Generate 250 sample emails</button>
+      <button id="renderBtn" class="secondary">Render as table</button>
+      <button id="ingestBtn">Route this batch →</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="panel full">
+    <h2>2. Raw batch (before any routing logic touches it)</h2>
+    <div style="overflow-x:auto; max-height:320px; overflow-y:auto;">
+      <table id="rawTable">
+        <thead><tr><th>from_name</th><th>from_email</th><th>subject</th><th>received_at</th><th>thread_id</th><th>body</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Stats</h2>
+    <div class="stats" id="statsBox"></div>
+    <div style="overflow-x:auto; max-height:280px; overflow-y:auto;">
+      <table id="taskTable">
+        <thead><tr><th>Subject/Title</th><th>Assignee</th><th>Category</th><th>Priority</th><th>Conf.</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>3. Ask about this batch</h2>
+    <div id="chatLog"></div>
+    <div class="chatinput">
+      <input id="chatInput" placeholder="e.g. How many were proposal or RFP related?" />
+      <button id="chatSend">Ask</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let lastBatch = [];
+
+function backend() { return ($('backendUrl').value || '').replace(/\/$/, ''); }
+function candidate() { return ($('candidateId').value || '').trim().toLowerCase(); }
+
+$('genBtn').onclick = () => {
+  // Client-side generator mirroring backend/generate_sample_emails.py so the
+  // demo works even before the backend is wired up.
+  const companies = ["Meridian Steel","Railyard Logistics","Halcyon Retail","Zenith Cloud Partners",
+    "Vantage Cloud Services","Bharat Heavy Electricals Limited","Orbit Analytics","Northbridge Traders"];
+  const templates = [
+    {subj:"RFP - Enterprise Document Management System", body:(c,s)=>`${c} invites proposals for an enterprise DMS. Indicative budget is Rs. 25 lakhs. Proposals must reach us by 12th August 2026. — ${s}`},
+    {subj:"Quick demo request", body:(c,s)=>`Hi, we're a 30-person team at ${c}. Could we get a demo next week? Nothing urgent. — ${s}`},
+    {subj:"Out of Office", body:(c,s)=>`I am out of office until 14th August with limited access to email. Sent from Outlook`},
+    {subj:"Grow your traffic 3x", body:(c,s)=>`We've helped 200+ SaaS companies 3x their organic traffic via content marketing and webinars. Free audit — quick 15 min call?`},
+    {subj:"Sponsorship confirmation needed", body:(c,s)=>`Gold sponsorship tier is Rs. 4,00,000, includes a keynote slot. Need confirmation by tomorrow EOD. — ${s}`},
+    {subj:"Invoice INV-2026-0331", body:(c,s)=>`Please find attached invoice for Rs. 1,18,000 against PO-88214. This is now overdue.`},
+    {subj:"Reseller partnership enquiry", body:(c,s)=>`We're an implementation partner with 40+ enterprise clients, interested in reselling your platform. — ${s}`},
+    {subj:"The B2B Growth Weekly — Issue #212", body:(c,s)=>`In this edition: pricing experiments that worked. [Unsubscribe]`},
+  ];
+  const names = ["Suresh Kulkarni","Ankit Bose","Nandita Reddy","Farhan Qureshi","Priya Sharma","Rohan Nair"];
+  const out = [];
+  for (let i=0;i<250;i++){
+    const t = templates[i % templates.length];
+    const c = companies[i % companies.length];
+    const s = names[i % names.length];
+    const dt = new Date(2026,7,1 + (i % 9), 9 + (i % 10), (i*7)%60);
+    out.push({
+      email_id: `em_${String(i).padStart(5,'0')}`,
+      thread_id: `th_${1000 + Math.floor(i/3)}`,
+      message_index: i % 3,
+      from_name: s,
+      from_email: s.toLowerCase().replace(' ','.') + '@' + c.toLowerCase().replace(/ /g,'') + '.co.in',
+      to: "sales@company.com",
+      cc: [],
+      subject: t.subj,
+      body: t.body(c, s),
+      received_at: dt.toISOString(),
+      attachments: [],
+      is_reply: i % 3 !== 0
+    });
+  }
+  $('jsonInput').value = JSON.stringify(out, null, 2);
+  renderTable();
+};
+
+function renderTable() {
+  let data;
+  try { data = JSON.parse($('jsonInput').value || '[]'); }
+  catch(e) { $('status').textContent = 'Invalid JSON: ' + e.message; return; }
+  if (!Array.isArray(data)) { $('status').textContent = 'Expected a JSON array of emails.'; return; }
+  lastBatch = data;
+  const tbody = document.querySelector('#rawTable tbody');
+  tbody.innerHTML = '';
+  data.forEach(e => {
+    const tr = document.createElement('tr');
+    const bodyPreview = (e.body || '').slice(0, 80).replace(/\n/g,' ');
+    tr.innerHTML = `<td>${esc(e.from_name)}</td><td>${esc(e.from_email)}</td><td>${esc(e.subject)}</td>
+      <td>${esc(e.received_at)}</td><td>${esc(e.thread_id)}</td><td class="body-preview">${esc(bodyPreview)}</td>`;
+    tbody.appendChild(tr);
+  });
+  $('status').textContent = `Rendered ${data.length} emails as raw table (nothing routed yet).`;
+}
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+$('renderBtn').onclick = renderTable;
+
+$('ingestBtn').onclick = async () => {
+  if (!backend()) { $('status').textContent = 'Set the backend URL first.'; return; }
+  if (!candidate()) { $('status').textContent = 'Set your candidate_id (email) first.'; return; }
+  if (!lastBatch.length) renderTable();
+  if (!lastBatch.length) return;
+  $('status').textContent = 'Routing…';
+  const batches = [];
+  for (let i=0;i<lastBatch.length;i+=100) batches.push(lastBatch.slice(i,i+100));
+  let totals = {processed:0, tasks_created:0, tasks_updated:0, skipped:0, errors:[]};
+  for (const b of batches) {
+    const res = await fetch(`${backend()}/ingest`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({candidate_id: candidate(), emails: b})
+    });
+    const j = await res.json();
+    totals.processed += j.processed||0; totals.tasks_created += j.tasks_created||0;
+    totals.tasks_updated += j.tasks_updated||0; totals.skipped += j.skipped||0;
+    totals.errors = totals.errors.concat(j.errors||[]);
+  }
+  $('status').textContent = `Done. Processed ${totals.processed}, created ${totals.tasks_created}, updated ${totals.tasks_updated}, skipped ${totals.skipped}, errors ${totals.errors.length}.`;
+  await refreshStats();
+};
+
+async function refreshStats() {
+  if (!backend() || !candidate()) return;
+  const statsRes = await fetch(`${backend()}/api/stats?candidate_id=${encodeURIComponent(candidate())}`);
+  const stats = await statsRes.json();
+  const box = $('statsBox'); box.innerHTML = '';
+  const t = stats.totals || {};
+  [['Processed', t.processed],['Created', t.created],['Updated', t.updated],
+   ['Skipped', t.skipped],['Spurious', t.spurious]].forEach(([l,n]) => {
+    const d = document.createElement('div'); d.className='stat';
+    d.innerHTML = `<div class="n">${n ?? 0}</div><div class="l">${l}</div>`;
+    box.appendChild(d);
+  });
+
+  const tasksRes = await fetch(`${backend()}/api/tasks?candidate_id=${encodeURIComponent(candidate())}`);
+  const data = await tasksRes.json();
+  const tbody = document.querySelector('#taskTable tbody'); tbody.innerHTML = '';
+  (data.tasks || []).forEach(task => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${esc(task.title)}</td><td>${esc(task.assignee_id)}</td><td>${esc(task.category)}</td>
+      <td>${esc(task.priority)}</td><td>${(task.confidence ?? 0).toFixed(2)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function addMsg(role, text, data) {
+  const log = $('chatLog');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  if (data) {
+    const pre = document.createElement('span');
+    pre.className = 'data';
+    pre.textContent = JSON.stringify(data);
+    div.appendChild(pre);
+  }
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function sendChat() {
+  const q = $('chatInput').value.trim();
+  if (!q) return;
+  if (!backend() || !candidate()) { addMsg('bot', 'Set backend URL and candidate_id first.'); return; }
+  addMsg('user', q);
+  $('chatInput').value = '';
+  const res = await fetch(`${backend()}/api/chat`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({candidate_id: candidate(), query: q})
+  });
+  const j = await res.json();
+  addMsg('bot', j.answer, j.supporting_data);
+}
+$('chatSend').onclick = sendChat;
+$('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+</script>
+</body>
+</html>
