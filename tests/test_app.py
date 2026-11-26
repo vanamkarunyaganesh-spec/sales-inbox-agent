@@ -30,3 +30,6 @@ def test_mocked_gemini(client,monkeypatch):
     client.post('/ingest',json={'emails':[e(subject='Invoice',body='Payment') ]});assert client.get('/tasks').json()[0]['category']=='finance'
 def test_home(client):
     assert 'Sales Inbox Agent' in client.get('/').text
+def test_ingest_reports_decision(client):
+    item=client.post('/ingest',json={'emails':[e(subject='Invoice',body='Payment pending')]}).json()['items'][0]
+    assert item['owner']=='Finance' and item['mode']=='rules'

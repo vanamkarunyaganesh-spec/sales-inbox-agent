@@ -99,7 +99,7 @@ def health(): return {'status':'ok','mode':'gemini configured' if os.getenv('GEM
 def users(): return TEAMS
 @app.post('/ingest')
 def ingest(batch:Batch):
-    result=dict(created=0,updated=0,skipped=0,duplicates=0)
+    result=dict(created=0,updated=0,skipped=0,duplicates=0,items=[])
     for e in batch.emails:
         with db() as c:
             if c.execute('SELECT 1 FROM emails WHERE id=?',(e.id,)).fetchone(): result['duplicates']+=1; continue
@@ -117,6 +117,7 @@ def ingest(batch:Batch):
                 else:
                     c.execute('INSERT INTO tasks(id,thread_id,title,category,owner,priority,due_date,description,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(uuid.uuid4().hex,e.thread_id,e.subject,d.category,TEAMS[d.category],d.priority,due,d.description,now)); result['created']+=1
             c.execute('INSERT INTO emails VALUES(?,?,?,?,?)',(e.id,e.thread_id,e.subject,d.action,mode))
+        result['items'].append({'action':d.action,'owner':TEAMS[d.category],'priority':d.priority,'mode':mode})
     return result
 @app.get('/tasks')
 @app.get('/api/tasks')
