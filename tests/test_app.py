@@ -33,3 +33,11 @@ def test_home(client):
 def test_ingest_reports_decision(client):
     item=client.post('/ingest',json={'emails':[e(subject='Invoice',body='Payment pending')]}).json()['items'][0]
     assert item['owner']=='Finance' and item['mode']=='rules'
+def test_draft_reply(client,monkeypatch):
+    payload={'body':'What are your hours?','details':'Hours: 10-6'}
+    assert client.post('/draft-reply',json=payload).status_code==503
+    monkeypatch.setenv('GEMINI_API_KEY','fake')
+    monkeypatch.setattr(main,'gemini',lambda p: {'reply':'We are open 10-6.','missing':[]})
+    assert client.post('/draft-reply',json=payload).json()['reply']=='We are open 10-6.'
+    monkeypatch.setattr(main,'gemini',lambda p: {})
+    assert client.post('/draft-reply',json=payload).status_code==502
