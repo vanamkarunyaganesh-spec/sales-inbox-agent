@@ -1,0 +1,10 @@
+Offline synthetic classification: 11/12 (91.7%)
+Category          Precision Recall
+alliances              1.00   1.00
+enterprise             1.00   1.00
+finance                1.00   1.00
+marketing              1.00   0.67
+skip                   1.00   1.00
+smb                    1.00   1.00
+triage                 0.50   1.00
+Failure: eval12: expected marketing, predicted triage

@@ -1,100 +1,61 @@
-# Sales Inbox → Task Router
+# Sales Inbox Agent
 
-**candidate_id:** `YOUR_EMAIL@example.com`  ← replace with your real, lowercased email everywhere (this file, `.env`, every API call). See "Before you submit" below.
+A local portfolio application based on the architecture of the existing [Sales Inbox Agent repository](https://github.com/vanamkarunyaganesh-spec/sales-inbox-agent). This is a standalone implementation, not a byte-for-byte copy or a drop-in replacement for the original challenge API.
 
-**Deployed backend URL:** `https://REPLACE-ME.onrender.com`
-**Deployed frontend URL:** `https://REPLACE-ME.vercel.app`
+## What it does
 
-*(Fill these in only after you've deployed — see "Deploy" below. They must be byte-identical here, in the submission form, and in every request your frontend makes.)*
+- Ingests batches of email JSON and converts actionable emails into tasks.
+- Routes work to sales, marketing, alliances, finance or operations using optional Gemini JSON classification or offline rules.
+- Applies deadline and government tender rules, skips common non-actionable messages, deduplicates email IDs and updates existing threads.
+- Stores tasks and routing logs in SQLite. Supports completing and reopening tasks.
+- Answers supported natural-language queries using parameterized SQL and grounded counts. This is a limited intent router, not an unrestricted LLM-to-SQL system.
+- Includes a responsive dashboard, REST API documentation, tests and synthetic classification evaluation.
 
-## What this is
+## Quick start on Windows (PowerShell)
 
-A backend (FastAPI) that implements the challenge's Task API spec (`/tasks`, `/users`), plus
-`/ingest`, `/api/tasks`, `/api/stats`, `/api/chat` on top of it — all under one deployable
-service, backed by SQLite so state survives restarts. A frontend (single static `index.html`,
-no build step) that lets you paste a batch of emails, see them as a raw table, then ask
-natural-language questions about them.
+1. Extract the ZIP. Open the `Sales_Inbox_Agent` folder in VS Code.
+2. Open Terminal > New Terminal. Run these commands (Python 3.11 or 3.12 recommended):
 
-Routing uses Gemini when `GEMINI_API_KEY` is set (recommended — this is what handles messy/
-Hinglish/ambiguous text well), with a deterministic rule-based fallback so the system is still
-testable with zero API cost. Two hard business rules (PSU tenders → Aarti; deadline <72h →
-priority high) are enforced in a post-processing pass regardless of which classifier ran, so
-they can never be silently missed.
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
 
-## Setup (local)
+3. Open http://127.0.0.1:8000 in your browser.
+4. Click **Load sample emails**, then **Route emails**. The demo runs without an API key.
+5. Try asking `How many open high priority tasks?` or `Show finance tasks`. Complete a task, then refresh the page: SQLite retains it.
+6. Stop the server with Ctrl+C. Delete `inbox.db` only if you intentionally want to reset all local data.
+
+Interactive API docs: http://127.0.0.1:8000/docs
+
+## Optional Gemini integration
+
+Get your own Gemini API key and copy `.env.example` to `.env` in the project root. Set `GEMINI_API_KEY` and a model available to your account in `GEMINI_MODEL`. Restart the server. Check the dashboard mode and routing logs in SQLite (the `emails` table records `gemini`, `rules` or `rules_fallback`). Never upload your `.env` to GitHub. The API sends supplied email contents to Gemini when enabled; use synthetic emails for testing and do not submit confidential email without permission. API requests may incur charges depending on your account.
+
+## Run tests and evaluation
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe evaluate.py
+```
+
+The evaluation is a tiny hand-labeled synthetic fixture, not a real inbox benchmark or an LLM evaluation. See `EVAL_RESULTS.txt` for actual offline results. Six local API tests passed during packaging, including a mocked Gemini success and failure. Live Gemini calls and Docker execution were not tested. There is no Gmail integration, authentication, multi-tenant access control or production deployment; keep the server local.
+
+## Architecture
+
+```
+Email JSON -> FastAPI /ingest -> Gemini or rules -> Business rules
+                                  |                  |
+                                  +------------------+-> SQLite
+Dashboard <- REST API <- task queries and SQL filters <--+
+```
+
+## Optional Docker
 
 ```bash
-cd backend
-pip install -r requirements.txt --break-system-packages
-cp .env.example .env   # then paste your real Gemini key into .env
-uvicorn main:app --reload --port 8000
+docker build -t sales-inbox-agent .
+docker run --rm -p 127.0.0.1:8000:8000 -v sales-inbox-data:/data -e DB_PATH=/data/inbox.db sales-inbox-agent
 ```
 
-Open `frontend/index.html` directly in a browser (or `python3 -m http.server` inside
-`frontend/`), point the "Backend URL" field at `http://localhost:8000`, and paste emails or
-click "Generate 250 sample emails".
-
-## Deploy
-
-**Backend (Render, free tier):**
-1. Push this repo to GitHub.
-2. On [render.com](https://render.com) → New → Web Service → connect the repo, root directory `backend`.
-3. Build command: `pip install -r requirements.txt`. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`.
-4. Add env var `GEMINI_API_KEY` (get one free at [aistudio.google.com](https://aistudio.google.com/app/apikey)).
-5. **Important (spec §5, persistence):** Render's free tier disk is ephemeral across deploys but
-   persists across idle-spin-downs within the same instance — that's sufficient for the grader's
-   Run 1→2→3 sequence (minutes apart), but if you redeploy the code between runs, SQLite resets.
-   For real durability, add a Render persistent disk mounted at `/opt/render/project/src/backend`,
-   or switch `DB_PATH` to a free Supabase Postgres and swap the `sqlite3` calls in `main.py` for
-   `psycopg2` (the SQL is close to portable already — see DECISIONS.md).
-6. Note the deployed URL (e.g. `https://sales-inbox-agent.onrender.com`).
-
-**Frontend (Netlify or Vercel, free tier):**
-1. Deploy the `frontend/` folder as a static site (drag-and-drop on Netlify works, or connect the repo with root directory `frontend`).
-2. No build step needed — it's a single `index.html`.
-3. Open the deployed site, paste your backend URL and candidate_id into the two fields at the top.
-
-**CORS:** `main.py` currently allows `allow_origins=["*"]` so the frontend works immediately from
-any origin. Before final submission, consider narrowing this to your actual frontend URL in
-`main.py`'s `CORSMiddleware` config — not required for grading, but better practice.
-
-## Before you submit — checklist
-
-- [ ] Replace every `YOUR_EMAIL@example.com` placeholder (this file, `.env` on your host) with
-      your real, lowercased, no-`+alias` email.
-- [ ] Confirm `GET https://your-backend-url/tasks?candidate_id=your@email.com` returns your test
-      tasks from a browser or curl — this is exactly what the grader will call.
-- [ ] Run the three-run sequence from §8.1 of the brief yourself once against your deployed URL
-      (ingest → ingest again → ingest replies) and confirm counts match the idempotency/
-      reconciliation expectations.
-- [ ] Fill in EVALS.md with real hand-labels from the ACTUAL `inbox.json` you were given — the
-      version in this repo was run against synthetic sample data (see EVALS.md header) because
-      the real dataset wasn't available while this scaffold was built. This step is not optional;
-      fabricated/synthetic metrics presented as real ones score below an honest low number per §7.5.
-- [ ] Fill in the deployed URLs at the top of this file and in the submission form — byte-identical.
-- [ ] Remove `backend/tasks.db` and `backend/smoke_test.py` from the repo before pushing (dev artifacts).
-- [ ] Double check no API key is committed (`.env` should be in `.gitignore`, already set up).
-
-## Project layout
-
-```
-backend/
-  main.py                 # FastAPI app: Task API + ingest + api/tasks + api/stats + api/chat
-  rules.py                 # deterministic parsing, prefilter, hard business rules, fallback classifier
-  gemini_client.py         # Gemini REST calls: classification + chat answer phrasing
-  query_engine.py          # translates chat questions into SQL queries over our own store
-  generate_sample_emails.py
-  team_roster.json
-  requirements.txt
-  .env.example
-frontend/
-  index.html               # paste → table → chat, single file, no build step
-DECISIONS.md
-EVALS.md
-```
-
-## A known limitation, stated plainly
-
-The chat query engine (`query_engine.py`) is a pattern-matched intent router covering the
-10 sample question types in the spec, not a general NL→SQL layer — see DECISIONS.md for why,
-and what a follow-up with more time would look like.
+The Dockerfile is provided but not executed during packaging.

@@ -1,0 +1,14 @@
+[
+ {"id":"eval1","thread_id":"e1","subject":"Government PSU tender","body":"Urgent tender response requested","expected":"enterprise"},
+ {"id":"eval2","thread_id":"e2","subject":"Product demo","body":"Can we arrange a demo?","expected":"smb"},
+ {"id":"eval3","thread_id":"e3","subject":"Invoice","body":"Please confirm payment","expected":"finance"},
+ {"id":"eval4","thread_id":"e4","subject":"Reseller partnership","body":"Discuss joining our partner network","expected":"alliances"},
+ {"id":"eval5","thread_id":"e5","subject":"Webinar sponsorship","body":"Please review our event proposal","expected":"marketing"},
+ {"id":"eval6","thread_id":"e6","subject":"Question","body":"Can someone help with this?","expected":"triage"},
+ {"id":"eval7","thread_id":"e7","subject":"Newsletter","body":"Click unsubscribe","expected":"skip"},
+ {"id":"eval8","thread_id":"e8","subject":"Out of office","body":"Automatic reply","expected":"skip"},
+ {"id":"eval9","thread_id":"e9","subject":"Product enquiry","body":"Budget 1.2 cr allocated","expected":"enterprise"},
+ {"id":"eval10","thread_id":"e10","subject":"Invoice dispute","body":"Please confirm the payment date","expected":"finance"},
+ {"id":"eval11","thread_id":"e11","subject":"Conference","body":"Would you sponsor a booth?","expected":"marketing"},
+ {"id":"eval12","thread_id":"e12","subject":"Quarterly advertising proposal","body":"Would you co-fund our event?","expected":"marketing"}
+]
